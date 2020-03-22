@@ -46,8 +46,12 @@ class Piece(arcade.Sprite):
         self.player_id = player_id
         if self.player_id == 1:
             super().__init__("resources/pieces/normal_red.png", scale=0.15)
+            self.normal_moves = [[1, 1], [-1, 1]]
+            self.capture_moves = [[2, 2], [-2, 2]]
         if self.player_id == 2:
             super().__init__("resources/pieces/normal_blue.png", scale=0.15)
+            self.normal_moves = [[1, -1], [-1, -1]]
+            self.capture_moves = [[2, -2], [-2, -2]]
         self.grid_pos = x, y
         self._set_position(((x+0.5)*CELL_WIDTH, (y+0.5)*CELL_HEIGHT))
         self.type = "normal"
@@ -61,6 +65,8 @@ class Piece(arcade.Sprite):
 
     def promote(self):
         self.type = "king"
+        self.normal_moves = [[1, 1], [-1, 1], [1, -1], [-1, -1]]
+        self.capture_moves = [[2, 2], [-2, 2], [2, -2], [-2, -2]]
         if self.player_id == 1:
             self.texture = arcade.load_texture(
                 "resources/pieces/king_red.png", scale=0.15)
@@ -73,10 +79,6 @@ class GameLogic():
     def __init__(self):
         self.board = None
         self.pieces = None
-        self.player_1_normal_moves = [[1, 1], [-1, 1]]
-        self.player_1_capture_moves = [[2, 2], [-2, 2]]
-        self.player_2_normal_moves = [[1, -1], [-1, -1]]
-        self.player_2_capture_moves = [[2, -2], [-2, -2]]
 
     def get_cell_at_pos(self, x, y):
         """ This functions returns the cell of the game board at the coordinates x, y. """
@@ -118,37 +120,23 @@ class GameLogic():
         self.pieces = pieces
         return self.pieces
 
-    def get_move_and_capture_set(self, piece):
-        """ This function returns a list containing the possible 
-        moves a piece can make (neglecting the logic of the game) """
-        if piece.player_id == 1 and piece.type == "normal":
-            move_set = self.player_1_normal_moves
-            capture_set = self.player_1_capture_moves
-        if piece.player_id == 2 and piece.type == "normal":
-            move_set = self.player_2_normal_moves
-            capture_set = self.player_2_capture_moves
-        if piece.type == "king":
-            move_set = self.player_1_normal_moves + self.player_2_normal_moves
-            capture_set = self.player_1_capture_moves + self.player_2_capture_moves
-        return move_set, capture_set
-
     def is_valid_move(self, piece, end_pos):
         """ This function checks if a move is allowed by checking
         if the desired position is occupied or not and by examining
         if a cell, that is intended to be jumped, is occupied or not
         and by which player. """
-        move_set, capture_set = self.get_move_and_capture_set(piece)
+        
         start_pos = piece.get_grid_pos()
         move = [end_pos[0]-start_pos[0], end_pos[1]-start_pos[1]]
 
-        if move in move_set:
+        if move in piece.normal_moves:
             cell = self.get_cell_at_pos(*end_pos)
             if not cell.occupied:
                 return True
             else:
                 return False
 
-        elif move in capture_set:
+        elif move in piece.capture_moves:
             cell = self.get_cell_at_pos(*end_pos)
             rel_coordinate_of_jumped_cell = (
                 np.sign(move[0])*1, np.sign(move[1])*1)
@@ -170,11 +158,10 @@ class GameLogic():
     def get_move_consequences(self, piece, end_pos):
         """ Given that a move is valid, this function takes care
         of the actions the game needs to take, especially removing pieces"""
-        capture_set = self.get_move_and_capture_set(piece)[1]
         start_pos = piece.get_grid_pos()
         move = [end_pos[0]-start_pos[0], end_pos[1]-start_pos[1]]
 
-        if move in capture_set:
+        if move in piece.capture_moves:
             rel_coordinate_of_jumped_cell = (
                 np.sign(move[0])*1, np.sign(move[1])*1)
             coordinate_of_jumped_cell = tuple(np.add(
@@ -185,31 +172,32 @@ class GameLogic():
 
     def perform_move(self, piece, new_pos):
         jumped = False
+        promoted = False
         piece_to_be_removed = self.get_move_consequences(piece, new_pos)
         if piece_to_be_removed != None:
             pos = piece_to_be_removed.get_grid_pos()
             self.get_cell_at_pos(*pos).occupied = False
             piece_to_be_removed.remove_from_sprite_lists()
             jumped = True
-        if piece.player_id == 1 and new_pos[1] == GAME_ROWS-1:
+        if piece.player_id == 1 and piece.type == "normal" and new_pos[1] == GAME_ROWS-1:
             piece.promote()
-        if piece.player_id == 2 and new_pos[1] == 0:
+            promoted = True
+        if piece.player_id == 2 and piece.type == "normal" and new_pos[1] == 0:
             piece.promote()
+            promoted = True
         self.get_cell_at_pos(*piece.get_grid_pos()).occupied = False
         self.get_cell_at_pos(*new_pos).occupied = True
         piece.set_grid_pos(*new_pos)
-        return jumped
+        return jumped, promoted
 
     def get_possible_piece_moves(self, piece):
-        # Get the movesets for the given piece
-        move_set, capture_set = self.get_move_and_capture_set(piece)
         # Get the current position of the piece
         pos = piece.get_grid_pos()
         # Create a list that saves the possible positions the piece could move to
         end_pos_list = []
         move_list = []
         # First check possible capture moves
-        for move in capture_set:
+        for move in piece.capture_moves:
             end_pos = tuple(np.add(pos, move))
             # Check if the position is really on the playing board
             if not any(i < 0 or i > GAME_COLS-1 for i in end_pos):
@@ -221,7 +209,7 @@ class GameLogic():
         if not move_list == []:
             return move_list
         # Then check standard moves
-        for move in move_set:
+        for move in piece.normal_moves:
             end_pos = tuple(np.add(pos, move))
             if not any(i < 0 or i > GAME_COLS-1 for i in end_pos):
                 end_pos_list.append(end_pos)
@@ -261,7 +249,7 @@ class GameLogic():
 class Game(arcade.Window):
     def __init__(self):
         super().__init__(SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_TITLE)
-        self.background = None
+        self.board = None
         self.game_logic = None
         self.mouse_pos = None, None
         self.dragged_piece = None
@@ -330,7 +318,7 @@ class Game(arcade.Window):
                 for cell in collision_list:
                     new_pos = cell.cell_id
                     if self.game_logic.is_valid_move(self.dragged_piece, new_pos):
-                        jumped = self.game_logic.perform_move(
+                        jumped, promoted = self.game_logic.perform_move(
                             self.dragged_piece, new_pos)
                         self.possible_moves = self.game_logic.get_possible_player_moves(
                             self.player_id_turn)
@@ -338,10 +326,11 @@ class Game(arcade.Window):
                         for piece_moves in self.possible_moves:
                             # piece_moves[0] would be the starting position of the piece
                             for move in piece_moves[1]:
-                                if move[1] == "capture" and jumped:
+                                if move[1] == "capture" and jumped and not promoted:
                                     continue_jumping = True
                                     break
                                 break
+                        # BUG if continue_jumping, the jumping piece can only move
                         if not continue_jumping:
                             if self.player_id_turn == 1:
                                 self.player_id_turn = 2
