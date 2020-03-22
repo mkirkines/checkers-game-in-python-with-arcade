@@ -82,42 +82,33 @@ class GameLogic():
 
     def get_cell_at_pos(self, x, y):
         """ This functions returns the cell of the game board at the coordinates x, y. """
-        for cell in self.board:
-            if cell.cell_id == (x, y):
-                return cell
-        return None
+        return [cell for cell in self.board if cell.cell_id == (x, y)][0]
 
     def get_piece_at_pos(self, x, y):
         """ This functions returns the piece at the coordinates x, y of the game board. """
-        for piece in self.pieces:
-            if piece.get_grid_pos() == (x, y):
-                return piece
-        return None
+        return [piece for piece in self.pieces if piece.get_grid_pos() == (x, y)][0]
 
     def setup_board(self):
         """ This function creates an arcade.SpriteList() that contains 
         Cell Objects that make up the game board """
-        board = arcade.SpriteList()
+        self.board = arcade.SpriteList()
         for y in range(GAME_ROWS):
             for x in range(GAME_COLS):
-                board.append(Cell(x, y))
-        self.board = board
+                self.board.append(Cell(x, y))
         return self.board
 
     def setup_pieces(self):
         """ This function creates the pieces of both players and returns
         them in an arcade.SpriteList()"""
-        pieces = arcade.SpriteList()
+        self.pieces = arcade.SpriteList()
         for y in range(GAME_ROWS):
             for x in range(GAME_COLS):
                 if y < 3 and (x+y) % 2 == 0:
-                    pieces.append(Piece(x, y, 1))
+                    self.pieces.append(Piece(x, y, 1))
                     self.get_cell_at_pos(x, y).occupied = True
                 if y >= GAME_ROWS-3 and (x+y) % 2 == 0:
-                    pieces.append(Piece(x, y, 2))
+                    self.pieces.append(Piece(x, y, 2))
                     self.get_cell_at_pos(x, y).occupied = True
-
-        self.pieces = pieces
         return self.pieces
 
     def is_valid_move(self, piece, end_pos):
@@ -125,7 +116,7 @@ class GameLogic():
         if the desired position is occupied or not and by examining
         if a cell, that is intended to be jumped, is occupied or not
         and by which player. """
-        
+
         start_pos = piece.get_grid_pos()
         move = [end_pos[0]-start_pos[0], end_pos[1]-start_pos[1]]
 
