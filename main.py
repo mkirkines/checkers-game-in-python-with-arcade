@@ -1,6 +1,8 @@
 import arcade
 import numpy as np
+import time
 from timeit import timeit
+import copy
 
 SCREEN_WIDTH = 600
 SCREEN_HEIGHT = 600
@@ -211,7 +213,7 @@ class GameLogic():
         else:
             return None
 
-    def perform_player_turn(self, x, y):
+    def perform_player_turn(self, x, y, output=False):
         moves = self.possible_moves[0][1]
         start_pos = self.possible_moves[0][0]
         end_pos = None
@@ -225,6 +227,9 @@ class GameLogic():
                 move_type = move[1]
                 if end_pos[1] in [0, GAME_ROWS-1]:
                     promoted = True
+                if output:
+                    print(
+                        f"Player {self.player_turn}: {start_pos} --> {end_pos}")
                 break
 
         if move_type == "capture":
@@ -263,22 +268,87 @@ class GameLogic():
             return
 
         self.dragged_piece = None
-
+        
         if not continue_jumping:
-            if self.player_turn == 1:
-                self.player_turn = 2
-            else:
-                self.player_turn = 1
-            self.possible_moves = self.get_possible_player_moves(
-                self.player_turn)
+            self.next_player()
+        else:
+            move = self.possible_moves[0]
+            start_pos = move[0]
+            end_pos = move[1][0][0]
+            self.set_dragged_piece(*start_pos)
+            self.perform_player_turn(*end_pos, output)
+
+    def next_player(self):
+        if self.player_turn == 1:
+            self.player_turn = 2
+        else:
+            self.player_turn = 1
+        self.possible_moves = self.get_possible_player_moves(
+            self.player_turn)
 
     def get_input(self, x, y):
         pos = self.convert_mouse_pos_to_board_loc(x, y)
         if pos:
             if self.dragged_piece:
-                self.perform_player_turn(*pos)
+                self.perform_player_turn(*pos, output=True)
             else:
                 self.set_dragged_piece(*pos)
+
+    def get_score(self):
+        score = 0
+        center_1 = [(3, 3), (4, 4)]
+        center_2 = [(2, 4), (5, 3)]
+        for piece in self.pieces:
+            if piece.player_id == 2:
+                if piece.type == "normal":
+                    score += 10
+                else:
+                    score += 30
+                if piece.get_grid_pos() in center_1:
+                    score += 5
+                if piece.get_grid_pos() in center_2:
+                    score += 3
+            else:
+                if piece.type == "normal":
+                    score -= 10
+                else:
+                    score -= 30
+                if piece.get_grid_pos() in center_1:
+                    score -= 5
+                if piece.get_grid_pos() in center_2:
+                    score -= 3
+        return score
+
+
+def get_move_scores(game_logic, depth):
+    moves = game_logic.possible_moves
+    pred_step = []
+    for move in moves:
+        for end_pos in move[1]:
+            pred = copy.deepcopy(game_logic)
+            pred.set_dragged_piece(*move[0])
+            pred.perform_player_turn(*end_pos[0])
+            pred_step.append(pred)
+
+    if depth > 0:
+        if game_logic.player_turn == 2:
+            return [max(get_move_scores(x, depth-1)) for x in pred_step]
+        if game_logic.player_turn == 1:
+            return [min(get_move_scores(x, depth-1)) for x in pred_step]
+    else:
+        return [x.get_score() for x in pred_step]
+
+
+@timeit
+def get_AI_move(game_logic, depth):
+    moves = game_logic.possible_moves
+    pred_move = []
+    for move in moves:
+        for end_pos in move[1]:
+            pred_move.append([move[0], end_pos[0]])
+    move_scores = get_move_scores(game_logic, depth)
+    index_of_best_move = np.argmax(move_scores)
+    return pred_move[index_of_best_move]
 
 
 class Game(arcade.Window):
@@ -322,9 +392,13 @@ class Game(arcade.Window):
     def on_mouse_motion(self, x: float, y: float, dx: float, dy: float):
         self.mouse_pos = x, y
 
-    @timeit
     def on_mouse_press(self, x: float, y: float, button: int, modifiers: int):
-        self.game_logic.get_input(x, y)
+        if self.game_logic.player_turn == 1:
+            self.game_logic.get_input(x, y)
+        if self.game_logic.player_turn == 2:
+            best_move = get_AI_move(self.game_logic, depth=1)
+            self.game_logic.set_dragged_piece(*best_move[0])
+            self.game_logic.perform_player_turn(*best_move[1], output=True)
 
 
 if __name__ == "__main__":
